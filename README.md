@@ -14,4 +14,6 @@ For each squad, every possible 11-player combination is scored and the best is k
 - −4 with no specialist keeper; −3.5 per missing bowling option below 4
 - +0.8 per all-rounder (max 3); chemistry bonus for 4+ players of one nation
 
+The host picks a **format** (All-format, Test, ODI, T20). Each format re-rates every player (`js/formats.js`) and changes the batting/bowling weights used to score teams.
+
 Player data lives in `js/players.js` (approximate, subjective ratings — edit freely). Base price is derived from overall rating.

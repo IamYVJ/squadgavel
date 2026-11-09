@@ -13,7 +13,7 @@ function bidIncrement(cur) {
 
 /* ---- Team rating algorithm ----
    1. From the squad, find the Best XI by brute force (every 11-player combination is scored).
-   2. XI score = 50% batting + 50% bowling + synergy adjustments:
+   2. XI score = batting/bowling blend (50/50; Tests weigh bowling 55%, T20 deeper batting) + synergy adjustments:
       - Batting: top 9 batting ratings in the XI, weighted by batting position (openers/top order count most).
       - Bowling: top 6 bowling ratings, weighted (five front-line bowlers matter most, 6th is depth).
       - No specialist wicketkeeper: -4
@@ -22,8 +22,6 @@ function bidIncrement(cur) {
       - Chemistry: 4+ players from the same country: +0.6 per extra player (max +3)
    3. Squads with < 11 players are padded with zero-rated slots, which hurts naturally.
 */
-const BAT_W = [1, 1, 1, 0.95, 0.9, 0.8, 0.65, 0.4, 0.25];
-const BOWL_W = [1, 1, 1, 0.9, 0.8, 0.35];
 
 function* combos(arr, k, start = 0, cur = []) {
   if (cur.length === k) { yield cur.slice(); return; }
@@ -42,8 +40,9 @@ function weighted(vals, W) {
 }
 
 function scoreXI(xi) {
-  const bat = weighted(xi.map(p => p.bat), BAT_W);
-  const bowl = weighted(xi.map(p => p.bowl), BOWL_W);
+  const cfg = FORMAT_CFG[CUR_FORMAT];
+  const bat = weighted(xi.map(p => p.bat), cfg.BAT_W);
+  const bowl = weighted(xi.map(p => p.bowl), cfg.BOWL_W);
   let bonus = 0;
   const notes = [];
   if (!xi.some(p => p.role === 'WK')) { bonus -= 4; notes.push({ t: 'No specialist keeper', v: -4 }); }
@@ -55,7 +54,7 @@ function scoreXI(xi) {
   xi.forEach(p => { counts[p.cty] = (counts[p.cty] || 0) + 1; });
   const [topC, topN] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || [null, 0];
   if (topN >= 4) { const v = Math.min(3, (topN - 3) * 0.6); bonus += v; notes.push({ t: `${topN} ${CTY[topC].name} players gel together`, v }); }
-  return { rating: 0.5 * bat + 0.5 * bowl + bonus, bat, bowl, bonus, notes };
+  return { rating: (1 - cfg.bw) * bat + cfg.bw * bowl + bonus, bat, bowl, bonus, notes };
 }
 
 function evaluateSquad(pids) {
@@ -71,7 +70,8 @@ function evaluateSquad(pids) {
   }
   if (ps.length < 11) {
     const miss = 11 - ps.length;
-    best.rating = 0.5 * best.bat * (ps.length / 11) + 0.5 * best.bowl * (ps.length / 11) + best.bonus;
+    const bw = FORMAT_CFG[CUR_FORMAT].bw;
+    best.rating = ((1 - bw) * best.bat + bw * best.bowl) * (ps.length / 11) + best.bonus;
     best.notes.push({ t: `${miss} empty slot${miss > 1 ? 's' : ''} in the XI`, v: null });
   }
   // batting order: by batting rating, genuine bowlers pushed to the tail

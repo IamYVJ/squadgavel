@@ -310,8 +310,8 @@ Brendan Taylor|ZIM|WK|74|0|L
 
 function overallOf(role, bat, bowl) {
   let v;
-  if (role === 'BAT') v = bat * 0.94 + bowl * 0.06;
-  else if (role === 'BOWL') v = bowl * 0.94 + bat * 0.06;
+  if (role === 'BAT') v = bat * 0.97 + bowl * 0.03;
+  else if (role === 'BOWL') v = bowl * 0.97 + bat * 0.03;
   else if (role === 'AR') v = (bat + bowl) / 2 + 5;
   else v = bat + 1; // WK
   return Math.min(99, Math.round(v));

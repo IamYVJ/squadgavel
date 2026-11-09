@@ -62,7 +62,8 @@ function commit() {
 }
 
 const nextAmt = lot => lot.bid ? lot.bid + bidIncrement(lot.bid) : PLAYERS[lot.pid].base;
-const maxBid = m => m.purse - Math.max(0, S.settings.size - m.squad.length - 1) * MIN_BASE;
+const bidCap = () => (S.settings.cap ? Math.round(S.settings.purse * S.settings.cap / 100) : Infinity);
+const maxBid = m => Math.min(bidCap(), m.purse - Math.max(0, S.settings.size - m.squad.length - 1) * MIN_BASE);
 const canBid = (m, amt) => m.squad.length < S.settings.size && amt <= maxBid(m);
 
 function checkQuick() {
@@ -201,7 +202,7 @@ function openHostPeer(code, restored, attempt = 0) {
 function newState(code) {
   return {
     code, phase: 'lobby', _t: Date.now(),
-    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard' },
+    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25 },
     members: [{ id: cid, name: ui.name, connected: true, host: true, color: 0, purse: 0, squad: [] }],
     auction: null
   };
@@ -330,6 +331,8 @@ function act(a, el) {
     case 'size': S.settings.size = clamp(S.settings.size + +d.d, 11, 16); commit(); break;
     case 'timer': S.settings.timer = +d.v; commit(); break;
     case 'lots': S.settings.lots = d.v; commit(); break;
+    case 'cap': S.settings.cap = +d.v; commit(); break;
+    case 'format': S.settings.format = d.v; commit(); break;
     case 'kick': {
       const c = conns.get(d.id); if (c) { c.send({ t: 'err', msg: 'You were removed by the host.' }); setTimeout(() => c.close(), 200); }
       S.members = S.members.filter(m => m.id !== d.id); conns.delete(d.id); commit(); break;
@@ -402,11 +405,13 @@ function updateTimer() {
 }
 
 const avatar = (m, cls = '') => `<span class="av ${cls}" style="--c:${COLORS[m.color % COLORS.length]}">${esc(m.name.charAt(0).toUpperCase())}</span>`;
-const logo = `<svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffe08a"/><stop offset="1" stop-color="#e0902b"/></linearGradient></defs><g transform="rotate(-35 32 32)"><rect x="14" y="10" width="30" height="16" rx="5" fill="url(#g1)"/><rect x="29" y="24" width="6" height="34" rx="3" fill="#c9792a"/></g><rect x="10" y="54" width="44" height="6" rx="3" fill="#2b3350"/></svg>`;
+const logo = `<svg class="logo" viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><g transform="rotate(-35 32 32)"><rect x="14" y="10" width="30" height="16"/><path d="M29 26v30M35 26v30"/></g><path d="M10 58h44"/></svg>`;
 const ctyTag = p => `<span class="tag cty" style="--h:${CTY[p.cty].hue}">${p.cty}</span>`;
 const roleTag = p => `<span class="tag role r-${p.role}">${ROLE_NAME[p.role]}</span>`;
 
 function render() {
+  const fmt = (S && S.settings && S.settings.format) || 'all';
+  if (fmt !== CUR_FORMAT) applyFormat(fmt);
   if (!S) $app.innerHTML = viewLanding();
   else if (S.phase === 'lobby') $app.innerHTML = viewLobby();
   else if (S.phase === 'auction') $app.innerHTML = viewAuction();
@@ -487,10 +492,13 @@ function viewLobby() {
     </section>
     <section class="card setup">
       <h2>${isHost ? 'Auction setup' : 'Auction setup <small>(host controls this)</small>'}</h2>
+      <div class="lbl">Format <small>(re-rates every player and changes how teams are scored)</small></div>
+      <div class="chips">${chips(Object.entries(FORMATS).map(([k, v]) => [k, v.label]), st.format || 'all', 'format')}</div>
+      <div class="muted fdesc">${FORMATS[st.format || 'all'].desc}</div>
       <div class="lbl">Player pool <small>(combine as many as you like)</small></div>
       <div class="pools">
         ${POOLS.map(pl => `<button class="pool ${st.pools.includes(pl.id) ? 'on' : ''}" data-act="pool" data-id="${pl.id}" ${isHost ? '' : 'disabled'}>
-          <span class="ic">${pl.icon}</span><span class="pn">${pl.name}</span><span class="pc">${pl.count}</span><span class="pd">${pl.desc}</span></button>`).join('')}
+          <span class="pn">${pl.name}</span><span class="pc">${pl.count}</span><span class="pd">${pl.desc}</span></button>`).join('')}
       </div>
       <div class="poolinfo ${pool.length >= need ? '' : 'bad'}">
         <b>${pool.length}</b> players in pool · need at least <b>${need}</b> (${st.size} × ${S.members.length})
@@ -501,10 +509,12 @@ function viewLobby() {
         <div><div class="lbl">Squad size</div>
           <div class="stepper"><button data-act="size" data-d="-1" ${isHost ? '' : 'disabled'}>−</button><b>${st.size}</b><button data-act="size" data-d="1" ${isHost ? '' : 'disabled'}>+</button></div></div>
         <div><div class="lbl">Bid timer</div><div class="chips">${chips([[8, '8s'], [12, '12s'], [20, '20s'], [30, '30s']], st.timer, 'timer')}</div></div>
+        <div><div class="lbl">Max bid per player</div><div class="chips">${chips([[0, 'No cap'], [10, '10%'], [25, '25%'], [50, '50%']], st.cap || 0, 'cap')}</div>
+          <div class="muted fdesc">${st.cap ? 'Capped at ' + fmtMoney(Math.round(st.purse * st.cap / 100)) + ' of the purse' : 'Bids limited only by purse'}</div></div>
         <div><div class="lbl">Auction length</div><div class="chips">${chips([['quick', 'Quick'], ['standard', 'Standard'], ['full', 'Full pool']], st.lots, 'lots')}</div></div>
       </div>
       ${isHost
-        ? `<button class="btn primary big" data-act="start" ${ok ? '' : 'disabled'}>${S.members.length < 2 ? 'Waiting for friends…' : pool.length < need ? 'Pool too small' : '🔨 Start the auction'}</button>`
+        ? `<button class="btn primary big" data-act="start" ${ok ? '' : 'disabled'}>${S.members.length < 2 ? 'Waiting for friends…' : pool.length < need ? 'Pool too small' : 'Start the auction'}</button>`
         : '<div class="waiting"><span class="dots"><i></i><i></i><i></i></span> Waiting for the host to start…</div>'}
     </section>
   </main>`;
@@ -521,14 +531,14 @@ function viewAuction() {
   else if (lot.bidder === cid) { can = false; why = "You're the highest bidder"; }
   else if (lot.passes.includes(cid)) { can = false; why = 'You passed on this player'; }
   else if (m.squad.length >= S.settings.size) { can = false; why = 'Your squad is full'; }
-  else if (amt > maxBid(m)) { can = false; why = 'Not enough purse (slots reserved)'; }
+  else if (amt > maxBid(m)) { can = false; why = amt > bidCap() ? 'Bid cap reached' : 'Not enough purse (slots reserved)'; }
   const bar = (v, cls) => `<div class="stat"><span>${cls === 'bat' ? 'Batting' : 'Bowling'}</span><div class="meter ${cls}"><i style="width:${v}%"></i></div><b>${v}</b></div>`;
   const view = ui.viewing && memberById(ui.viewing);
   const side = view || m;
   return `${topbar()}
   <main class="auction">
     <section class="stage">
-      <div class="lotmeta">Lot <b>${a.idx + 1}</b> / ${a.order.length} · Squad size ${S.settings.size}</div>
+      <div class="lotmeta">Lot <b>${a.idx + 1}</b> / ${a.order.length} · ${FORMATS[S.settings.format || 'all'].label} · Squad size ${S.settings.size}</div>
       <div class="pcard">
         <div class="ovr" style="--v:${p.ovr}"><span>${p.ovr}</span><small>OVR</small></div>
         <div class="pinfo">
@@ -550,8 +560,8 @@ function viewAuction() {
             </div>`}
       </div>
       ${isHost ? `<div class="hostbar">
-        <button class="btn sm" data-act="pause">${lot.paused ? '▶ Resume' : '⏸ Pause'}</button>
-        <button class="btn sm" data-act="skip" ${lot.state === 'bidding' ? '' : 'disabled'}>⏭ Skip lot</button>
+        <button class="btn sm" data-act="pause">${lot.paused ? 'Resume' : 'Pause'}</button>
+        <button class="btn sm" data-act="skip" ${lot.state === 'bidding' ? '' : 'disabled'}>Skip lot</button>
         <button class="btn sm danger" data-act="end">End auction</button></div>` : ''}
       <div class="history"><h3>Recent</h3>
         ${a.history.slice(0, 6).map(h => { const hp = PLAYERS[h.pid], b = h.buyer && memberById(h.buyer);
@@ -577,30 +587,30 @@ function viewResults() {
     const ev = evaluateSquad(m.squad.map(s => s.pid));
     return { m, ev, spent: m.squad.reduce((a, s) => a + s.price, 0) };
   }).sort((a, b) => b.ev.rating - a.ev.rating);
-  const champ = rows[0];
+  const champ = rows[0] && rows[0].ev.rating > 0 ? rows[0] : null;
   const all = S.members.flatMap(m => m.squad.map(s => ({ ...s, m, p: PLAYERS[s.pid] })));
   const priciest = all.slice().sort((a, b) => b.price - a.price)[0];
-  const steal = all.filter(x => x.p.ovr >= 80).sort((a, b) => (a.price / a.p.base) - (b.price / b.p.base) || b.p.ovr - a.p.ovr)[0];
-  const medals = ['🥇', '🥈', '🥉'];
+  const steal = all.filter(x => x.p.ovr >= 80 && x !== priciest).sort((a, b) => (a.price / a.p.base) - (b.price / b.p.base) || b.p.ovr - a.p.ovr)[0];
+  const medals = [];
   return `${topbar()}
   <main class="results">
     <section class="champ card">
-      <div class="crown">👑</div>
-      <div class="lbl">Champion squad</div>
-      <h1>${champ ? esc(champ.m.name) : '—'}</h1>
-      <div class="crating">${champ ? champ.ev.rating.toFixed(1) : '0'}<small>team rating</small></div>
+            ${champ ? `<div class="lbl">Champion squad</div>
+      <h1>${esc(champ.m.name)}</h1>
+      <div class="crating">${champ.ev.rating.toFixed(1)}<small>team rating</small></div>`
+      : `<div class="lbl">No champion</div><h1>No squads built</h1><p class="muted">The auction ended before anyone built a team.</p>`}
       <div class="awards">
-        ${priciest ? `<div class="award"><small>💰 Most expensive</small><b>${esc(priciest.p.name)}</b><span>${fmtMoney(priciest.price)} · ${esc(priciest.m.name)}</span></div>` : ''}
-        ${steal ? `<div class="award"><small>🎯 Steal of the auction</small><b>${esc(steal.p.name)}</b><span>${fmtMoney(steal.price)} (base ${fmtMoney(steal.p.base)}) · ${esc(steal.m.name)}</span></div>` : ''}
+        ${priciest ? `<div class="award"><small>Most expensive</small><b>${esc(priciest.p.name)}</b><span>${fmtMoney(priciest.price)} · ${esc(priciest.m.name)}</span></div>` : ''}
+        ${steal ? `<div class="award"><small>Steal of the auction</small><b>${esc(steal.p.name)}</b><span>${fmtMoney(steal.price)} (base ${fmtMoney(steal.p.base)}) · ${esc(steal.m.name)}</span></div>` : ''}
       </div>
     </section>
     ${rows.map((r, i) => {
       const e = r.ev, c = COLORS[r.m.color % COLORS.length];
-      const chance = i === 0 ? null : Math.round(winChance(e.rating, champ.ev.rating) * 100);
+      const chance = i === 0 || !champ ? null : Math.round(winChance(e.rating, champ.ev.rating) * 100);
       const price = id => (r.m.squad.find(s => s.pid === id) || {}).price || 0;
       return `<section class="card team ${i === 0 ? 'gold' : ''}" style="--c:${c}">
         <div class="thead">
-          <div class="rank">${medals[i] || '#' + (i + 1)}</div>
+          <div class="rank">${medals[i] || (i + 1)}</div>
           ${avatar(r.m)}
           <div class="tn"><h2>${esc(r.m.name)}${r.m.id === cid ? ' <em>(you)</em>' : ''}</h2><small>Spent ${fmtMoney(r.spent)} · ${fmtMoney(r.m.purse)} left${chance !== null ? ` · ${chance}% to beat the champion` : ''}</small></div>
           <div class="rt">${e.rating.toFixed(1)}</div>
@@ -616,10 +626,10 @@ function viewResults() {
       </section>`;
     }).join('')}
     <section class="card algo"><h3>How the rating works</h3>
-      <p>For every squad we test <b>every possible XI</b> and keep the strongest. An XI scores <b>50% batting + 50% bowling</b>, where the top order and front-line bowlers carry the most weight, then adjusts for balance: a specialist keeper, at least four real bowling options, all-rounders, and national-team chemistry. Spend doesn't matter — only the team you built.</p>
+      <p>For every squad we test <b>every possible XI</b> and keep the strongest. An XI blends <b>batting and bowling</b> (50/50; Tests lean 55% on bowling) in the chosen format, where the top order and front-line bowlers carry the most weight, then adjusts for balance: a specialist keeper, at least four real bowling options, all-rounders, and national-team chemistry. Spend doesn't matter — only the team you built.</p>
     </section>
     <div class="actions">
-      ${isHost ? '<button class="btn primary" data-act="again">🔁 New auction (same room)</button>' : '<div class="muted">Waiting for host to start a new auction…</div>'}
+      ${isHost ? '<button class="btn primary" data-act="again">New auction · same room</button>' : '<div class="muted">Waiting for host to start a new auction…</div>'}
       <button class="btn ghost" data-act="leave">${isHost ? 'Close room' : 'Leave'}</button>
     </div>
   </main>`;
