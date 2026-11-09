@@ -20,7 +20,7 @@ let peer = null, hostConn = null;
 const conns = new Map();    // host side: cid -> DataConnection
 let ui = { busy: false, error: '', viewing: null, status: '', showHow: false, tab: 'squad' };
 let joinTimer = null, retryTimer = null, retries = 0, leaving = false, gen = 0;
-let tickHandle = null;
+let tickHandle = null, tvMode = false;
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const me = () => S && S.members.find(m => m.id === cid);
@@ -140,6 +140,10 @@ function doPass(id) {
 /* ---- host connection handling ---- */
 function onHostData(conn, d) {
   if (!d || !S) return;
+  if (d.t === 'watch') {
+    if (!conn.tvKey) { conn.tvKey = 'tv-' + Math.random().toString(36).slice(2); conns.set(conn.tvKey, conn); }
+    commit(); return;
+  }
   if (d.t === 'join') {
     let m = memberById(d.cid);
     if (!m) {
@@ -162,6 +166,7 @@ function onHostData(conn, d) {
   else if (d.t === 'pass') doPass(conn.cid);
 }
 function onHostClose(conn) {
+  if (conn.tvKey) { conns.delete(conn.tvKey); return; }
   if (conn.__replaced || !conn.cid || conns.get(conn.cid) !== conn || !S) return;
   conns.delete(conn.cid);
   const m = memberById(conn.cid);
@@ -211,8 +216,9 @@ function newState(code) {
 /* =========================================================
    Client connection
    ========================================================= */
-function joinRoom(code, name) {
+function joinRoom(code, name, tv = false) {
   code = code.toUpperCase();
+  tvMode = tv;
   leaving = false;
   const g = ++gen;
   setBusy('Connecting…');
@@ -224,8 +230,8 @@ function joinRoom(code, name) {
     const conn = peer.connect(PREFIX + code, { reliable: true });
     hostConn = conn;
     conn.on('open', () => {
-      conn.send({ t: 'join', cid, name });
-      store.set('sqgv-session', { code, host: false, name });
+      if (tv) conn.send({ t: 'watch' });
+      else { conn.send({ t: 'join', cid, name }); store.set('sqgv-session', { code, host: false, name }); }
     });
     conn.on('data', d => {
       if (g !== gen) return;
@@ -259,7 +265,7 @@ function handleClientDrop(code, name) {
   if (retries++ > 40) { teardown(); setError('Lost connection to the host.'); return; }
   ui.status = 'Reconnecting…'; render();
   clearTimeout(retryTimer);
-  retryTimer = setTimeout(() => { if (!leaving) joinRoom(code, name); }, 2000);
+  retryTimer = setTimeout(() => { if (!leaving) joinRoom(code, name, tvMode); }, 2000);
   // keep S so the UI stays visible while we retry; joinRoom() resets busy flag
   ui.busy = false;
 }
@@ -270,7 +276,7 @@ function teardown() {
   clearInterval(tickHandle); tickHandle = null;
   clearTimeout(retryTimer); clearTimeout(joinTimer);
   if (peer) { try { peer.destroy(); } catch {} }
-  peer = null; hostConn = null; conns.clear(); S = null; isHost = false; ui.busy = false; ui.status = '';
+  peer = null; hostConn = null; conns.clear(); S = null; isHost = false; tvMode = false; ui.busy = false; ui.status = '';
 }
 function setBusy(msg) { ui.busy = msg; ui.error = ''; render(); }
 function setError(msg) { ui.busy = false; ui.error = msg; render(); }
@@ -303,6 +309,11 @@ function act(a, el) {
       const code = (document.getElementById('code').value || '').trim().toUpperCase();
       if (code.length !== 4) return setError('Enter the 4-letter room code.');
       ui.name = name; store.set('sqgv-name', name); joinRoom(code, name); break;
+    }
+    case 'watch': {
+      const code = (document.getElementById('code').value || '').trim().toUpperCase();
+      if (code.length !== 4) return setError('Enter the 4-letter room code to watch.');
+      joinRoom(code, '', true); break;
     }
     case 'rejoin': { const s = store.get('sqgv-session'); if (s) joinRoom(s.code, s.name || ui.name); break; }
     case 'resume': {
@@ -412,7 +423,9 @@ const roleTag = p => `<span class="tag role r-${p.role}">${ROLE_NAME[p.role]}</s
 function render() {
   const fmt = (S && S.settings && S.settings.format) || 'all';
   if (fmt !== CUR_FORMAT) applyFormat(fmt);
+  document.body.classList.toggle('tv', !!(tvMode && S));
   if (!S) $app.innerHTML = viewLanding();
+  else if (tvMode) $app.innerHTML = viewTV();
   else if (S.phase === 'lobby') $app.innerHTML = viewLobby();
   else if (S.phase === 'auction') $app.innerHTML = viewAuction();
   else $app.innerHTML = viewResults();
@@ -441,6 +454,7 @@ function viewLanding() {
         <input id="code" class="code-in" maxlength="4" autocomplete="off" placeholder="CODE" value="${esc(qroom)}" ${busy ? 'disabled' : ''} oninput="this.value=this.value.toUpperCase()">
         <button class="btn" data-act="join" ${busy ? 'disabled' : ''}>Join</button>
       </div>
+      <button class="btn ghost wide" data-act="watch" ${busy ? 'disabled' : ''}>Watch on TV · enter code above</button>
       ${sess && !sess.host ? `<button class="btn ghost wide" data-act="rejoin">Rejoin room ${esc(sess.code)}</button>` : ''}
       ${hosted ? `<button class="btn ghost wide" data-act="resume">Resume your room ${esc(hosted.S.code)}</button>` : ''}
     </section>
@@ -483,6 +497,7 @@ function viewLobby() {
       <div class="bigcode" data-act="copy" data-v="${esc(S.code)}" data-m="Code copied">${esc(S.code)}</div>
       <div class="row center">
         <button class="btn sm" data-act="copy" data-v="${esc(link)}" data-m="Invite link copied">Copy invite link</button>
+        <button class="btn sm" data-act="copy" data-v="${esc(link + '&tv=1')}" data-m="TV link copied">Copy TV link</button>
       </div>
       <h3>Players <small>${S.members.length}/${MAX_MEMBERS}</small></h3>
       <ul class="plist">
@@ -582,6 +597,58 @@ function viewAuction() {
   </main>`;
 }
 
+function viewTV() {
+  const url = location.host + location.pathname.replace(/index\.html$/, '').replace(/\/$/, '');
+  const head = (right) => `<header class="tvtop"><div class="brand">${logo}<span>Squad<b>gavel</b></span></div><div class="tvmeta">${right}</div><div class="tvroom">Room <b>${esc(S.code)}</b></div></header>${ui.status ? `<div class="banner">${esc(ui.status)}</div>` : ''}`;
+  if (S.phase === 'lobby') {
+    const st = S.settings, pools = POOLS.filter(p => st.pools.includes(p.id)).map(p => p.name).join(' · ');
+    return `<div class="tvwrap">${head('Lobby')}
+      <div class="tvlobby">
+        <div class="tvjoin"><div class="lbl">Join at</div><div class="tvurl">${esc(url)}</div><div class="lbl">Room code</div><div class="tvcode">${esc(S.code)}</div></div>
+        <div class="tvside">
+          <div class="lbl">Players ${S.members.length}/${MAX_MEMBERS}</div>
+          ${S.members.map(m => `<div class="tvp">${avatar(m)}<span>${esc(m.name)}</span>${m.host ? '<span class="pill">Host</span>' : ''}</div>`).join('')}
+          <div class="lbl">Setup</div>
+          <div class="tvsetup">${FORMATS[st.format || 'all'].label} · ${pools}<br>${fmtMoney(st.purse)} purse · ${st.size} per squad · ${st.timer}s timer</div>
+        </div>
+      </div></div>`;
+  }
+  if (S.phase === 'auction') {
+    const a = S.auction, lot = a.lot, p = PLAYERS[lot.pid], leader = lot.bidder ? memberById(lot.bidder) : null;
+    return `<div class="tvwrap">${head(`Lot ${a.idx + 1} / ${a.order.length} · ${FORMATS[S.settings.format || 'all'].label}`)}
+      <div class="tvmain">
+        <section class="tvstage">
+          <div class="tvplayer">
+            <div class="ovr"><span>${p.ovr}</span><small>OVR</small></div>
+            <div><h2>${esc(p.name)}</h2><div class="tags">${ctyTag(p)}${roleTag(p)}<span class="tag era">${p.era === 'L' ? 'Legend' : 'Active'}</span></div>
+              <div class="tvstats">Batting <b>${p.bat}</b> &nbsp; Bowling <b>${p.bowl}</b> &nbsp; Base <b>${fmtMoney(p.base)}</b></div></div>
+          </div>
+          <div class="tvbid ${lot.state}">
+            ${lot.state === 'sold' ? `<div class="stamp sold">SOLD<small>to ${esc(leader ? leader.name : '?')} for ${fmtMoney(lot.bid)}</small></div>`
+              : lot.state === 'unsold' ? '<div class="stamp unsold">UNSOLD</div>'
+              : `<small>${lot.bid ? 'Current bid' : 'Opening bid'}</small><b>${fmtMoney(lot.bid || p.base)}</b>
+                 <div class="leader">${leader ? `${avatar(leader, 'sm')}<span style="color:${COLORS[leader.color % COLORS.length]}">${esc(leader.name)}</span>` : '<span class="muted">No bids yet</span>'}</div>`}
+          </div>
+          <div class="timer"><div id="tfill"></div><span id="ttext"></span></div>
+        </section>
+        <aside class="tvteams">${S.members.map(t => `<div class="tvt ${lot.bidder === t.id ? 'lead' : ''} ${t.connected ? '' : 'off'}">
+          ${avatar(t)}<div class="tm"><b>${esc(t.name)}</b><div class="slots">${Array.from({ length: S.settings.size }, (_, i) => `<i class="${i < t.squad.length ? 'f' : ''}"></i>`).join('')}</div></div>
+          <div class="pr"><b>${fmtMoney(t.purse)}</b><small>${t.squad.length}/${S.settings.size}</small></div></div>`).join('')}</aside>
+      </div>
+      <footer class="tvticker">${a.history.slice(0, 5).map(h => { const hp = PLAYERS[h.pid], b = h.buyer && memberById(h.buyer);
+        return `<span><b>${esc(hp.name)}</b> ${b ? `<em style="color:${COLORS[b.color % COLORS.length]}">${esc(b.name)} · ${fmtMoney(h.price)}</em>` : '<em>unsold</em>'}</span>`; }).join('') || '<span class="muted">Nothing sold yet</span>'}</footer></div>`;
+  }
+  const rows = S.members.map(m => ({ m, ev: evaluateSquad(m.squad.map(s => s.pid)), spent: m.squad.reduce((x, s) => x + s.price, 0) })).sort((a, b) => b.ev.rating - a.ev.rating);
+  const champ = rows[0] && rows[0].ev.rating > 0 ? rows[0] : null;
+  return `<div class="tvwrap">${head('Results')}
+    <div class="tvres">
+      <section class="tvchamp">${champ ? `<div class="lbl">Champion squad</div><h1>${esc(champ.m.name)}</h1><div class="crating">${champ.ev.rating.toFixed(1)}<small>team rating</small></div>
+        <div class="tvxi">${champ.ev.xi.map((p, k) => `<div><span class="n">${k + 1}</span><span class="sn">${esc(p.name)}</span><b>${p.ovr}</b></div>`).join('')}</div>`
+        : '<div class="lbl">No champion</div><h1>No squads built</h1>'}</section>
+      <section class="tvrank">${rows.map((r, i) => `<div class="tvt"><span class="rank">${i + 1}</span>${avatar(r.m)}<div class="tm"><b>${esc(r.m.name)}</b><small>Spent ${fmtMoney(r.spent)}</small></div><div class="rt" style="--c:${COLORS[r.m.color % COLORS.length]}">${r.ev.rating.toFixed(1)}</div></div>`).join('')}</section>
+    </div></div>`;
+}
+
 function viewResults() {
   const rows = S.members.map(m => {
     const ev = evaluateSquad(m.squad.map(s => s.pid));
@@ -639,4 +706,8 @@ function viewResults() {
 ui.name = store.get('sqgv-name') || '';
 window.addEventListener('beforeunload', () => { if (isHost && S) store.set('sqgv-host', { S }); });
 render();
+{
+  const q = new URLSearchParams(location.search), room = (q.get('room') || '').toUpperCase();
+  if (q.get('tv') && room.length === 4) joinRoom(room, '', true);
+}
 })();

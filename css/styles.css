@@ -200,3 +200,46 @@ footer{text-align:center;color:var(--muted);font-size:10.5px;letter-spacing:.16e
 }
 
 .fdesc{font-size:12.5px;margin-top:8px}
+
+/* TV spectator mode */
+body.tv{cursor:none;overflow:hidden}
+.tvwrap{height:100vh;padding:2.2vw 3.5vw 1.6vw;display:flex;flex-direction:column;gap:1.6vw}
+.tvtop{display:flex;align-items:center;justify-content:space-between}
+.tvtop .brand{font-size:2.2vw}.tvtop .brand .logo{width:2.4vw;height:2.4vw}
+.tvmeta{font-size:.9vw;letter-spacing:.24em;text-transform:uppercase;color:var(--muted)}
+.tvroom{font-size:.9vw;letter-spacing:.24em;text-transform:uppercase;color:var(--muted)}.tvroom b{font:200 2vw var(--head);letter-spacing:.3em;color:var(--gold2);margin-left:.8vw}
+.tv .lbl{font-size:.85vw}
+.tvlobby{flex:1;display:grid;grid-template-columns:1.3fr 1fr;gap:6vw;align-items:center}
+.tvurl{font:300 2.6vw var(--head);color:var(--soft)}
+.tvcode{font:100 17vw/1 var(--head);letter-spacing:.1em;color:var(--gold2)}
+.tvp{display:flex;align-items:center;gap:1vw;font:300 1.8vw var(--head);padding:.7vw 0;border-bottom:1px solid var(--line)}
+.tvp .av{width:2.4vw;height:2.4vw;font-size:1.2vw}
+.tvsetup{font-size:1.2vw;color:var(--soft);line-height:1.8}
+.tvmain{flex:1;display:grid;grid-template-columns:1fr 26vw;gap:4vw;min-height:0}
+.tvstage{display:flex;flex-direction:column;justify-content:space-between;min-height:0}
+.tvplayer{display:flex;gap:3vw;align-items:center;padding-bottom:2vw;border-bottom:1px solid var(--line)}
+.tvplayer .ovr span{font-size:9vw}.tvplayer .ovr small{font-size:.8vw}
+.tvplayer h2{font-size:4.6vw;line-height:1.05}
+.tvplayer .tags{margin:1vw 0}.tvplayer .tag{font-size:.9vw}
+.tvstats{font-size:1.1vw;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}.tvstats b{color:var(--text);font:300 1.6vw var(--head);letter-spacing:0}
+.tvbid{text-align:center;display:grid;gap:.4vw}
+.tvbid small{font-size:1vw;letter-spacing:.26em;text-transform:uppercase}
+.tvbid>b{font:100 13vw/1 var(--head);letter-spacing:-.04em}
+.tvbid .leader{font-size:2.2vw}.tvbid .av.sm{width:2vw;height:2vw;font-size:1vw}
+.tvbid .stamp{font-size:11vw}.tvbid .stamp small{font-size:1.6vw}
+.tv .timer{margin:0 0 .5vw}.tv #ttext{font-size:1.1vw;top:-2vw}
+.tvteams,.tvrank{display:flex;flex-direction:column;overflow:hidden}
+.tvt{display:flex;align-items:center;gap:1vw;padding:.9vw .8vw;border-bottom:1px solid var(--line);transition:.25s}
+.tvt.lead{background:rgba(201,170,108,.1);box-shadow:inset 3px 0 var(--gold)}
+.tvt.off{opacity:.4}
+.tvt .av{width:2.6vw;height:2.6vw;font-size:1.3vw}
+.tvt .tm{flex:1;min-width:0}.tvt .tm b{font-size:1.5vw}.tvt .slots i{width:.7vw}
+.tvt .pr b{font-size:1.4vw}.tvt .pr small{font-size:.85vw}
+.tvticker{display:flex;gap:3vw;font-size:1vw;color:var(--soft);border-top:1px solid var(--line);padding-top:1vw;overflow:hidden;white-space:nowrap}
+.tvticker em{font-style:normal;margin-left:.5vw;color:var(--muted)}
+.tvres{flex:1;display:grid;grid-template-columns:1.2fr 1fr;gap:5vw;align-items:center}
+.tvchamp h1{font-size:7vw;font-style:italic;font-weight:200;color:var(--gold2);line-height:1;margin:.5vw 0}
+.tvchamp .crating{font-size:4vw}.tvchamp .crating small{font-size:.8vw}
+.tvxi{display:grid;grid-template-columns:1fr 1fr;gap:0 3vw;margin-top:2vw}
+.tvxi div{display:flex;gap:.8vw;padding:.5vw 0;border-bottom:1px solid var(--line);font-size:1.2vw}.tvxi .sn{flex:1}.tvxi .n{color:var(--muted);width:1.2vw}.tvxi b{font:300 1.3vw var(--head)}
+.tvrank .rank{font:100 2.4vw var(--head);color:var(--muted);width:3vw}.tvrank .rt{font-size:3vw}.tvrank .tm b{font-size:1.8vw}
