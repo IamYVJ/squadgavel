@@ -20,7 +20,7 @@ let peer = null, hostConn = null;
 const conns = new Map();    // host side: cid -> DataConnection
 let ui = { busy: false, error: '', viewing: null, status: '', showHow: false, tab: 'squad' };
 let joinTimer = null, retryTimer = null, retries = 0, leaving = false, gen = 0;
-let tickHandle = null, tvMode = false;
+let tickHandle = null, tvMode = false, visitors = null;
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const me = () => S && S.members.find(m => m.id === cid);
@@ -468,7 +468,7 @@ function viewLanding() {
         <li>When the dust settles, our algorithm picks each squad's <b>Best XI</b> and crowns a champion.</li>
       </ol>
     </section>` : ''}
-    <footer>Peer-to-peer · no accounts · no servers of ours</footer>
+    <footer>Peer-to-peer · no accounts · no servers of ours${visitors != null ? `<br><span class="visitors"><b>${visitors}</b> visitors</span>` : ''}</footer>
   </main>`;
 }
 
@@ -706,6 +706,11 @@ function viewResults() {
 ui.name = store.get('sqgv-name') || '';
 window.addEventListener('beforeunload', () => { if (isHost && S) store.set('sqgv-host', { S }); });
 render();
+// Visitor count from the shared GoatCounter site (per-path, all-time). Decorative: silent on failure.
+fetch('https://yvj.goatcounter.com/counter/' + encodeURIComponent(location.pathname) + '.json?start=2026-01-01')
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(d => { if (d && d.count != null) { visitors = d.count; const f = !S && document.querySelector('footer'); if (f) f.insertAdjacentHTML('beforeend', `<br><span class="visitors"><b>${visitors}</b> visitors</span>`); } })
+  .catch(() => {});
 {
   const q = new URLSearchParams(location.search), room = (q.get('room') || '').toUpperCase();
   if (q.get('tv') && room.length === 4) joinRoom(room, '', true);

@@ -243,3 +243,4 @@ body.tv{cursor:none;overflow:hidden}
 .tvxi{display:grid;grid-template-columns:1fr 1fr;gap:0 3vw;margin-top:2vw}
 .tvxi div{display:flex;gap:.8vw;padding:.5vw 0;border-bottom:1px solid var(--line);font-size:1.2vw}.tvxi .sn{flex:1}.tvxi .n{color:var(--muted);width:1.2vw}.tvxi b{font:300 1.3vw var(--head)}
 .tvrank .rank{font:100 2.4vw var(--head);color:var(--muted);width:3vw}.tvrank .rt{font-size:3vw}.tvrank .tm b{font-size:1.8vw}
+footer .visitors{display:inline-block;margin-top:8px}footer .visitors b{color:var(--text);font-weight:400}
