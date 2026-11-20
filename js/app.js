@@ -320,7 +320,7 @@ function handleClientDrop(code, name) {
 function send(msg) { if (hostConn && hostConn.open) hostConn.send(msg); }
 
 function teardown() {
-  clearInterval(tickHandle); tickHandle = null;
+  clearInterval(tickHandle); tickHandle = null; releaseAwake();
   clearTimeout(retryTimer); clearTimeout(joinTimer);
   if (peer) { try { peer.destroy(); } catch {} }
   peer = null; hostConn = null; conns.clear(); S = null; isHost = false; tvMode = false; ui.busy = false; ui.status = '';
@@ -334,7 +334,20 @@ function leave() {
   teardown(); ui.error = ''; render();
 }
 
+/* Keep the screen awake while in a room: a sleeping host tab stops the auction clock, and a sleeping guest drops off. */
+let wakeLock = null;
+async function keepAwake() {
+  if (!S || !navigator.wakeLock || document.visibilityState !== 'visible' || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch { wakeLock = null; }
+}
+function releaseAwake() { if (wakeLock) { try { wakeLock.release(); } catch {} wakeLock = null; } }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
 function startTick() {
+  keepAwake();
   clearInterval(tickHandle);
   tickHandle = setInterval(() => { hostTick(); updateTimer(); }, 150);
 }
@@ -575,6 +588,7 @@ function viewLobby() {
         ${S.members.map(m => `<li>${avatar(m)}<span class="nm">${esc(m.name)}${m.id === cid ? ' <em>(you)</em>' : ''}</span>${m.host ? '<span class="pill">HOST</span>' : (isHost ? `<button class="x" title="Remove" data-act="kick" data-id="${m.id}">✕</button>` : '')}</li>`).join('')}
       </ul>
       ${S.members.length < 2 ? '<p class="muted">Share the code with friends — they join from this page.</p>' : ''}
+      ${isHost ? '<p class="muted">Keep this tab open and in front while hosting: the auction clock runs here.</p>' : ''}
     </section>
     <section class="card setup">
       <h2>${isHost ? 'Auction setup' : 'Auction setup <small>(host controls this)</small>'}</h2>
