@@ -116,7 +116,10 @@ function buildOrder(pool) {
   picked.sort((a, b) => PLAYERS[b].ovr - PLAYERS[a].ovr);
   const mode = S.settings.group, order = [];
   const sets = GROUPS[mode] ? GROUPS[mode].order.map(k => picked.filter(i => grpOf(PLAYERS[i], mode) === k)) : [picked];
-  sets.forEach(set => { for (let i = 0; i < set.length; i += 6) order.push(...shuffle(set.slice(i, i + 6))); });
+  sets.forEach(set => {
+    if (S.settings.shuffle) order.push(...shuffle(set.slice()));
+    else for (let i = 0; i < set.length; i += 6) order.push(...shuffle(set.slice(i, i + 6)));
+  });
   return order;
 }
 function beginAuction(order) {
@@ -246,7 +249,7 @@ function openHostPeer(code, restored, attempt = 0) {
 function newState(code) {
   return {
     code, phase: 'lobby', _t: Date.now(),
-    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25, preview: false, group: 'none' },
+    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25, preview: false, group: 'none', shuffle: false },
     members: [{ id: cid, name: ui.name, connected: true, host: true, color: 0, purse: 0, squad: [] }],
     auction: null
   };
@@ -383,6 +386,7 @@ function act(a, el) {
     case 'lots': S.settings.lots = d.v; commit(); break;
     case 'cap': S.settings.cap = +d.v; commit(); break;
     case 'format': S.settings.format = d.v; commit(); break;
+    case 'shuffle': S.settings.shuffle = d.v === '1'; commit(); break;
     case 'group': S.settings.group = d.v; commit(); break;
     case 'preview': S.settings.preview = d.v === '1'; commit(); break;
     case 'ready': if (isHost) toggleReady(cid); else send({ t: 'ready' }); break;
@@ -585,6 +589,8 @@ function viewLobby() {
           <div class="muted fdesc">${st.preview ? 'Everyone browses every player, shortlists favourites, then readies up' : 'Jump straight into bidding'}</div></div>
         <div><div class="lbl">Group players into sets</div><div class="chips">${chips([['none', 'Off'], ['role', 'Role'], ['cty', 'Country'], ['era', 'Legend / Current']], st.group || 'none', 'group')}</div>
           <div class="muted fdesc">${{ none: 'Players come up in mixed order, best tiers first', role: 'Batters, then keepers, all-rounders, bowlers', cty: 'One country at a time', era: 'Legends first, then current stars' }[st.group || 'none']}</div></div>
+        <div><div class="lbl">Lot order</div><div class="chips">${chips([[0, 'Best first'], [1, 'Shuffled']], st.shuffle ? 1 : 0, 'shuffle')}</div>
+          <div class="muted fdesc">${st.shuffle ? 'Fully random order' : 'Top-rated tiers first, mixed within each tier'}${st.group && st.group !== 'none' ? ' · applied within each set' : ''}</div></div>
         <div><div class="lbl">Auction length</div><div class="chips">${chips([['quick', 'Quick'], ['standard', 'Standard'], ['full', 'Full pool']], st.lots, 'lots')}</div></div>
       </div>
       ${isHost
