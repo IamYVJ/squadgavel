@@ -189,6 +189,8 @@ function onHostData(conn, d) {
     commit(); return;
   }
   if (d.t === 'join') {
+    // cid ends up unescaped in data-id attributes on every client, so only accept plain ids
+    if (typeof d.cid !== 'string' || !/^[a-z0-9]{4,40}$/.test(d.cid)) { conn.send({ t: 'err', msg: 'Invalid player id. Clear site data and retry.' }); setTimeout(() => conn.close(), 300); return; }
     let m = memberById(d.cid);
     if (!m) {
       if (S.phase !== 'lobby') { conn.send({ t: 'err', msg: 'This auction has already started.' }); setTimeout(() => conn.close(), 300); return; }
@@ -353,12 +355,12 @@ function act(a, el) {
       const name = readName(); if (!name) return;
       const code = (document.getElementById('code').value || '').trim().toUpperCase();
       if (code.length !== 4) return setError('Enter the 4-letter room code.');
-      ui.name = name; store.set('sqgv-name', name); joinRoom(code, name); break;
+      ui.code = code; ui.name = name; store.set('sqgv-name', name); joinRoom(code, name); break;
     }
     case 'watch': {
       const code = (document.getElementById('code').value || '').trim().toUpperCase();
       if (code.length !== 4) return setError('Enter the 4-letter room code to watch.');
-      joinRoom(code, '', true); break;
+      ui.code = code; joinRoom(code, '', true); break;
     }
     case 'rejoin': { const s = store.get('sqgv-session'); if (s) joinRoom(s.code, s.name || ui.name); break; }
     case 'resume': {
@@ -520,7 +522,7 @@ function viewLanding() {
       <button class="btn primary big" data-act="host" ${busy ? 'disabled' : ''}>${busy || 'Host a room'}</button>
       <div class="or"><span>or join a friend</span></div>
       <div class="row">
-        <input id="code" class="code-in" maxlength="4" autocomplete="off" placeholder="CODE" value="${esc(qroom)}" ${busy ? 'disabled' : ''} oninput="this.value=this.value.toUpperCase()">
+        <input id="code" class="code-in" maxlength="4" autocomplete="off" placeholder="CODE" value="${esc(ui.code || qroom)}" ${busy ? 'disabled' : ''} oninput="this.value=this.value.toUpperCase()">
         <button class="btn" data-act="join" ${busy ? 'disabled' : ''}>Join</button>
       </div>
       <button class="btn ghost wide" data-act="watch" ${busy ? 'disabled' : ''}>Watch on TV · enter code above</button>

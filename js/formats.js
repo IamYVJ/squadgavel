@@ -54,7 +54,7 @@ Zaheer Khan|2,2|0,0|-4,-4
 Irfan Pathan|-4,-4|2,2|3,3
 Dinesh Karthik|-8,0|-4,0|2,0
 Ajinkya Rahane|3,0|-10,0|-18,0
-Don Bradman|0,0|-12,0|-30,0
+Donald Bradman|0,0|-12,0|-30,0
 Ricky Ponting|1,0|2,0|-4,0
 Adam Gilchrist|0,0|2,0|2,0
 Matthew Hayden|1,0|0,0|-3,0
