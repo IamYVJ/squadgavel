@@ -391,7 +391,8 @@ function act(a, el) {
       const saved = h.S; Object.assign(toks, h.toks || {});
       saved.members.forEach(m => { m.connected = m.id === cid; });
       const lot = saved.auction && saved.auction.lot;
-      if (lot && lot.state === 'bidding') lot.paused = true;
+      // The saved time left can be stale (it's only saved on state changes), so restart the lot's timer in full.
+      if (lot && lot.state === 'bidding') { lot.paused = true; lot.left = saved.settings.timer * 1000; }
       else if (lot) lot.nextAt = Date.now() + 2000;
       ui.name = (saved.members.find(m => m.id === cid) || {}).name || ui.name;
       openHostPeer(saved.code, saved);
