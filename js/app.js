@@ -21,6 +21,8 @@ const conns = new Map();    // host side: cid -> DataConnection
 let ui = { busy: false, error: '', viewing: null, status: '', showHow: false, tab: 'squad' };
 let joinTimer = null, retryTimer = null, retries = 0, leaving = false, gen = 0;
 let tickHandle = null, tvMode = false, visitors = null;
+const favs = new Set(store.get('sqgv-favs') || []);   // shortlisted player names (private, this device)
+const pv = { q: '', role: 'all', sort: 'ovr', fav: false };
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const me = () => S && S.members.find(m => m.id === cid);
@@ -79,11 +81,37 @@ function startAuction() {
   const pool = poolPids();
   const need = S.settings.size * S.members.length;
   if (pool.length < need) return toast(`Pool too small: need ${need} players, only ${pool.length}`);
+  const order = buildOrder(pool);
+  if (S.settings.preview) {
+    S.members.forEach(m => { m.ready = false; });
+    S.phase = 'preview'; S.preview = { order };
+    return commit();
+  }
+  beginAuction(order);
+}
+function toggleReady(id) {
+  const m = memberById(id);
+  if (!m || !S || S.phase !== 'preview') return;
+  m.ready = !m.ready;
+  if (!checkReady()) commit();
+}
+function checkReady() {
+  if (!S || S.phase !== 'preview') return false;
+  const live = S.members.filter(m => m.connected);
+  if (live.length < 2 || !live.every(m => m.ready)) return false;
+  beginAuction(S.preview.order);
+  return true;
+}
+function buildOrder(pool) {
   const picked = shuffle(pool.slice()).slice(0, lotCount(pool.length));
   picked.sort((a, b) => PLAYERS[b].ovr - PLAYERS[a].ovr);
   const order = [];
   for (let i = 0; i < picked.length; i += 6) order.push(...shuffle(picked.slice(i, i + 6)));
-  S.members.forEach(m => { m.purse = S.settings.purse; m.squad = []; });
+  return order;
+}
+function beginAuction(order) {
+  S.members.forEach(m => { m.purse = S.settings.purse; m.squad = []; delete m.ready; });
+  S.preview = null;
   S.phase = 'auction';
   S.auction = { order, idx: -1, lot: null, history: [] };
   startLot(0);
@@ -164,6 +192,7 @@ function onHostData(conn, d) {
   if (!conn.cid) return;
   if (d.t === 'bid') doBid(conn.cid, d.amt);
   else if (d.t === 'pass') doPass(conn.cid);
+  else if (d.t === 'ready') toggleReady(conn.cid);
 }
 function onHostClose(conn) {
   if (conn.tvKey) { conns.delete(conn.tvKey); return; }
@@ -172,7 +201,7 @@ function onHostClose(conn) {
   const m = memberById(conn.cid);
   if (!m) return;
   if (S.phase === 'lobby') S.members = S.members.filter(x => x.id !== conn.cid);
-  else { m.connected = false; checkQuick(); }
+  else { m.connected = false; checkQuick(); if (checkReady()) return; }
   commit();
 }
 
@@ -207,7 +236,7 @@ function openHostPeer(code, restored, attempt = 0) {
 function newState(code) {
   return {
     code, phase: 'lobby', _t: Date.now(),
-    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25 },
+    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25, preview: false },
     members: [{ id: cid, name: ui.name, connected: true, host: true, color: 0, purse: 0, squad: [] }],
     auction: null
   };
@@ -344,6 +373,15 @@ function act(a, el) {
     case 'lots': S.settings.lots = d.v; commit(); break;
     case 'cap': S.settings.cap = +d.v; commit(); break;
     case 'format': S.settings.format = d.v; commit(); break;
+    case 'preview': S.settings.preview = d.v === '1'; commit(); break;
+    case 'ready': if (isHost) toggleReady(cid); else send({ t: 'ready' }); break;
+    case 'go': if (isHost && S.phase === 'preview') beginAuction(S.preview.order); break;
+    case 'fav': {
+      if (favs.has(d.n)) favs.delete(d.n); else favs.add(d.n);
+      store.set('sqgv-favs', [...favs]); render(); break;
+    }
+    case 'pvq': break;
+    case 'pvf': pv[d.k] = d.k === 'fav' ? !pv.fav : d.v; render(); break;
     case 'kick': {
       const c = conns.get(d.id); if (c) { c.send({ t: 'err', msg: 'You were removed by the host.' }); setTimeout(() => c.close(), 200); }
       S.members = S.members.filter(m => m.id !== d.id); conns.delete(d.id); commit(); break;
@@ -372,9 +410,9 @@ function act(a, el) {
     case 'view': ui.viewing = ui.viewing === d.id ? null : d.id; render(); break;
     case 'tab': ui.tab = d.v; render(); break;
     case 'again': {
-      S.phase = 'lobby'; S.auction = null;
+      S.phase = 'lobby'; S.auction = null; S.preview = null;
       S.members = S.members.filter(m => m.host || m.connected);
-      S.members.forEach(m => { m.squad = []; m.purse = 0; }); commit(); break;
+      S.members.forEach(m => { m.squad = []; m.purse = 0; delete m.ready; }); commit(); break;
     }
   }
 }
@@ -392,6 +430,7 @@ $app.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (el && !el.disabled) act(el.dataset.act, el);
 });
+$app.addEventListener('input', e => { if (e.target.id === 'pq') { pv.q = e.target.value; render(); } });
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.id === 'code') act('join');
   else if (e.key === 'Enter' && e.target.id === 'name') act(document.getElementById('code').value ? 'join' : 'host');
@@ -427,6 +466,11 @@ function render() {
   if (!S) $app.innerHTML = viewLanding();
   else if (tvMode) $app.innerHTML = viewTV();
   else if (S.phase === 'lobby') $app.innerHTML = viewLobby();
+  else if (S.phase === 'preview') {
+    const ae = document.activeElement, keep = ae && ae.id === 'pq' ? [ae.selectionStart, ae.selectionEnd] : null;
+    $app.innerHTML = viewPreview();
+    if (keep) { const q = document.getElementById('pq'); q.focus(); try { q.setSelectionRange(keep[0], keep[1]); } catch {} }
+  }
   else if (S.phase === 'auction') $app.innerHTML = viewAuction();
   else $app.innerHTML = viewResults();
   updateTimer();
@@ -526,12 +570,56 @@ function viewLobby() {
         <div><div class="lbl">Bid timer</div><div class="chips">${chips([[8, '8s'], [12, '12s'], [20, '20s'], [30, '30s']], st.timer, 'timer')}</div></div>
         <div><div class="lbl">Max bid per player</div><div class="chips">${chips([[0, 'No cap'], [10, '10%'], [25, '25%'], [50, '50%']], st.cap || 0, 'cap')}</div>
           <div class="muted fdesc">${st.cap ? 'Capped at ' + fmtMoney(Math.round(st.purse * st.cap / 100)) + ' of the purse' : 'Bids limited only by purse'}</div></div>
+        <div><div class="lbl">Player preview</div><div class="chips">${chips([[0, 'Off'], [1, 'On']], st.preview ? 1 : 0, 'preview')}</div>
+          <div class="muted fdesc">${st.preview ? 'Everyone browses every player, shortlists favourites, then readies up' : 'Jump straight into bidding'}</div></div>
         <div><div class="lbl">Auction length</div><div class="chips">${chips([['quick', 'Quick'], ['standard', 'Standard'], ['full', 'Full pool']], st.lots, 'lots')}</div></div>
       </div>
       ${isHost
-        ? `<button class="btn primary big" data-act="start" ${ok ? '' : 'disabled'}>${S.members.length < 2 ? 'Waiting for friends…' : pool.length < need ? 'Pool too small' : 'Start the auction'}</button>`
+        ? `<button class="btn primary big" data-act="start" ${ok ? '' : 'disabled'}>${S.members.length < 2 ? 'Waiting for friends…' : pool.length < need ? 'Pool too small' : st.preview ? 'Open player preview' : 'Start the auction'}</button>`
         : '<div class="waiting"><span class="dots"><i></i><i></i><i></i></span> Waiting for the host to start…</div>'}
     </section>
+  </main>`;
+}
+
+function viewPreview() {
+  const m = me(), order = S.preview.order, q = pv.q.trim().toLowerCase();
+  const key = { ovr: p => -p.ovr, bat: p => -p.bat, bowl: p => -p.bowl, base: p => -p.base, name: p => p.name }[pv.sort] || (p => -p.ovr);
+  let list = order.map(i => PLAYERS[i]);
+  const total = list.length, nfav = list.filter(p => favs.has(p.name)).length;
+  if (q) list = list.filter(p => p.name.toLowerCase().includes(q) || CTY[p.cty].name.toLowerCase().includes(q) || p.cty.toLowerCase() === q);
+  if (pv.role !== 'all') list = list.filter(p => p.role === pv.role);
+  if (pv.fav) list = list.filter(p => favs.has(p.name));
+  list.sort((a, b) => { const x = key(a), y = key(b); return x < y ? -1 : x > y ? 1 : b.ovr - a.ovr; });
+  const chip = (k, v, label, on) => `<button class="chip ${on ? 'on' : ''}" data-act="pvf" data-k="${k}" data-v="${v}">${label}</button>`;
+  const live = S.members.filter(m => m.connected), rd = live.filter(m => m.ready).length;
+  return `${topbar()}
+  <main class="preview">
+    <div class="pvhead">
+      <div><div class="lbl">Player preview</div><h2>The pool <small>${total} players · ${FORMATS[S.settings.format || 'all'].label}</small></h2>
+        <div class="muted">Study the stats and ☆ shortlist your targets. Shortlists are private to you. The auction starts when everyone is ready.</div></div>
+    </div>
+    <div class="pvtools">
+      <input id="pq" class="pvq" type="search" placeholder="Search player or country" value="${esc(pv.q)}" autocomplete="off" data-act="pvq">
+      <div class="chips">${[['all', 'All'], ['BAT', 'Batters'], ['BOWL', 'Bowlers'], ['AR', 'All-rounders'], ['WK', 'Keepers']].map(([v, l]) => chip('role', v, l, pv.role === v)).join('')}</div>
+      <div class="chips"><span class="lbl inl">Sort</span>${[['ovr', 'OVR'], ['bat', 'Bat'], ['bowl', 'Bowl'], ['base', 'Base'], ['name', 'A–Z']].map(([v, l]) => chip('sort', v, l, pv.sort === v)).join('')}
+        ${chip('fav', 1, `★ Shortlist (${nfav})`, pv.fav)}</div>
+    </div>
+    <div class="pvtable">
+      <div class="pvrow hd"><span>Player</span><span>OVR</span><span>Bat</span><span>Bowl</span><span>Base</span><span></span></div>
+      ${list.map(p => `<div class="pvrow ${favs.has(p.name) ? 'fav' : ''}">
+        <span class="pn"><b>${esc(p.name)}</b><span class="tags">${ctyTag(p)}${roleTag(p)}<span class="tag era">${p.era === 'L' ? 'Legend' : 'Active'}</span></span></span>
+        <span class="n o">${p.ovr}</span><span class="n"><i class="meter bat"><i style="width:${p.bat}%"></i></i>${p.bat}</span><span class="n"><i class="meter bowl"><i style="width:${p.bowl}%"></i></i>${p.bowl}</span>
+        <span class="n b">${fmtMoney(p.base)}</span>
+        <button class="star ${favs.has(p.name) ? 'on' : ''}" data-act="fav" data-n="${esc(p.name)}" title="Shortlist" aria-label="Shortlist ${esc(p.name)}">${favs.has(p.name) ? '★' : '☆'}</button></div>`).join('')
+        || '<div class="pvempty muted">No players match.</div>'}
+    </div>
+    <div class="pvbar">
+      <div class="pvwho">${S.members.map(x => `<span class="${x.ready ? 'ok' : ''} ${x.connected ? '' : 'off'}" title="${esc(x.name)}">${avatar(x)}<em>${x.ready ? '✓' : '…'}</em></span>`).join('')}<small>${rd}/${live.length} ready</small></div>
+      <div class="row">
+        ${m ? `<button class="btn ${m.ready ? '' : 'primary'}" data-act="ready">${m.ready ? 'Not ready' : "I'm ready"}</button>` : ''}
+        ${isHost ? '<button class="btn" data-act="go">Start now</button>' : ''}
+      </div>
+    </div>
   </main>`;
 }
 
@@ -560,6 +648,7 @@ function viewAuction() {
           <h2>${esc(p.name)}</h2>
           <div class="tags">${ctyTag(p)}${roleTag(p)}<span class="tag era">${p.era === 'L' ? 'Legend' : 'Active'}</span></div>
           <div class="stats">${bar(p.bat, 'bat')}${bar(p.bowl, 'bowl')}</div>
+          <button class="favbtn ${favs.has(p.name) ? 'on' : ''}" data-act="fav" data-n="${esc(p.name)}">${favs.has(p.name) ? '★ On your shortlist' : '☆ Shortlist'}</button>
         </div>
         <div class="base"><small>Base price</small><b>${fmtMoney(p.base)}</b></div>
       </div>
@@ -611,6 +700,17 @@ function viewTV() {
           <div class="lbl">Setup</div>
           <div class="tvsetup">${FORMATS[st.format || 'all'].label} · ${pools}<br>${fmtMoney(st.purse)} purse · ${st.size} per squad · ${st.timer}s timer</div>
         </div>
+      </div></div>`;
+  }
+  if (S.phase === 'preview') {
+    const top = S.preview.order.map(i => PLAYERS[i]).sort((a, b) => b.ovr - a.ovr).slice(0, 8), rd = S.members.filter(m => m.ready).length;
+    return `<div class="tvwrap">${head('Player preview')}
+      <div class="tvlobby">
+        <div class="tvjoin"><div class="lbl">Browsing the pool</div><div class="tvurl">${S.preview.order.length} players go under the hammer</div>
+          <div class="lbl">Ready</div><div class="tvcode">${rd}/${S.members.length}</div></div>
+        <div class="tvside"><div class="lbl">Players</div>
+          ${S.members.map(m => `<div class="tvp">${avatar(m)}<span>${esc(m.name)}</span><span class="pill ${m.ready ? 'ok' : ''}">${m.ready ? 'Ready' : 'Browsing'}</span></div>`).join('')}
+          <div class="lbl">Headliners</div><div class="tvsetup">${top.map(p => `${esc(p.name)} <b>${p.ovr}</b>`).join(' · ')}</div></div>
       </div></div>`;
   }
   if (S.phase === 'auction') {
