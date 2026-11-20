@@ -21,7 +21,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,100..400;1,9..144,100..400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css">
+<!-- CACHE VERSION: the ?v=N on css/styles.css and every js/*.js below must all be bumped (same number)
+     in the SAME commit as ANY change to those files. GitHub Pages caches files ~10 min and there is no
+     service worker, so an unbumped change is not picked up by returning visitors. Current: v=1 -->
+<link rel="stylesheet" href="css/styles.css?v=1">
 </head>
 <body>
 <div class="bg"></div>
@@ -31,10 +34,10 @@
 <p>No accounts, no downloads: it runs peer-to-peer in your browser.</p></main></div>
 <noscript>Squadgavel needs JavaScript to run the live auction.</noscript>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="js/players.js"></script>
-<script src="js/formats.js"></script>
-<script src="js/engine.js"></script>
-<script src="js/app.js"></script>
+<script src="js/players.js?v=1"></script>
+<script src="js/formats.js?v=1"></script>
+<script src="js/engine.js?v=1"></script>
+<script src="js/app.js?v=1"></script>
 <!-- GoatCounter pageview beacon. Shared site across projects (counts are per-path). Path is pinned
      to location.pathname so invite links (?room=CODE&tv=1) don't create an entry per room. -->
 <script>window.goatcounter = { path: function () { return location.pathname; } };</script>
