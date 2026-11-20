@@ -277,3 +277,4 @@ footer .visitors{display:inline-block;margin-top:8px}footer .visitors b{color:va
   .pvbar{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
 }
 .pvrow .n .meter{display:block}
+.pvgrp{font:300 22px var(--head);color:var(--gold2);padding:26px 0 8px;border-bottom:1px solid var(--line2)}.pvgrp small{font:400 11px var(--font);letter-spacing:.14em;color:var(--muted);margin-left:8px}

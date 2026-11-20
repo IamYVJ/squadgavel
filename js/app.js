@@ -102,11 +102,21 @@ function checkReady() {
   beginAuction(S.preview.order);
   return true;
 }
+/* Optional grouping of lots into sets (role / country / era), like an IPL auction's sets. */
+const GROUPS = {
+  role: { key: p => p.role, label: k => ROLE_NAME[k] + 's', order: ['BAT', 'WK', 'AR', 'BOWL'] },
+  cty: { key: p => p.cty, label: k => CTY[k].name, order: Object.keys(CTY) },
+  era: { key: p => p.era, label: k => k === 'L' ? 'Legends' : 'Current stars', order: ['L', 'C'] }
+};
+const grpOf = (p, mode = S && S.settings.group) => GROUPS[mode] ? GROUPS[mode].key(p) : null;
+const grpRank = (p, mode = S && S.settings.group) => GROUPS[mode] ? GROUPS[mode].order.indexOf(grpOf(p, mode)) : 0;
+const setTag = p => { const g = GROUPS[S.settings.group]; return g ? ` · Set: <b>${esc(g.label(g.key(p)))}</b>` : ''; };
 function buildOrder(pool) {
   const picked = shuffle(pool.slice()).slice(0, lotCount(pool.length));
   picked.sort((a, b) => PLAYERS[b].ovr - PLAYERS[a].ovr);
-  const order = [];
-  for (let i = 0; i < picked.length; i += 6) order.push(...shuffle(picked.slice(i, i + 6)));
+  const mode = S.settings.group, order = [];
+  const sets = GROUPS[mode] ? GROUPS[mode].order.map(k => picked.filter(i => grpOf(PLAYERS[i], mode) === k)) : [picked];
+  sets.forEach(set => { for (let i = 0; i < set.length; i += 6) order.push(...shuffle(set.slice(i, i + 6))); });
   return order;
 }
 function beginAuction(order) {
@@ -236,7 +246,7 @@ function openHostPeer(code, restored, attempt = 0) {
 function newState(code) {
   return {
     code, phase: 'lobby', _t: Date.now(),
-    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25, preview: false },
+    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25, preview: false, group: 'none' },
     members: [{ id: cid, name: ui.name, connected: true, host: true, color: 0, purse: 0, squad: [] }],
     auction: null
   };
@@ -373,6 +383,7 @@ function act(a, el) {
     case 'lots': S.settings.lots = d.v; commit(); break;
     case 'cap': S.settings.cap = +d.v; commit(); break;
     case 'format': S.settings.format = d.v; commit(); break;
+    case 'group': S.settings.group = d.v; commit(); break;
     case 'preview': S.settings.preview = d.v === '1'; commit(); break;
     case 'ready': if (isHost) toggleReady(cid); else send({ t: 'ready' }); break;
     case 'go': if (isHost && S.phase === 'preview') beginAuction(S.preview.order); break;
@@ -572,6 +583,8 @@ function viewLobby() {
           <div class="muted fdesc">${st.cap ? 'Capped at ' + fmtMoney(Math.round(st.purse * st.cap / 100)) + ' of the purse' : 'Bids limited only by purse'}</div></div>
         <div><div class="lbl">Player preview</div><div class="chips">${chips([[0, 'Off'], [1, 'On']], st.preview ? 1 : 0, 'preview')}</div>
           <div class="muted fdesc">${st.preview ? 'Everyone browses every player, shortlists favourites, then readies up' : 'Jump straight into bidding'}</div></div>
+        <div><div class="lbl">Group players into sets</div><div class="chips">${chips([['none', 'Off'], ['role', 'Role'], ['cty', 'Country'], ['era', 'Legend / Current']], st.group || 'none', 'group')}</div>
+          <div class="muted fdesc">${{ none: 'Players come up in mixed order, best tiers first', role: 'Batters, then keepers, all-rounders, bowlers', cty: 'One country at a time', era: 'Legends first, then current stars' }[st.group || 'none']}</div></div>
         <div><div class="lbl">Auction length</div><div class="chips">${chips([['quick', 'Quick'], ['standard', 'Standard'], ['full', 'Full pool']], st.lots, 'lots')}</div></div>
       </div>
       ${isHost
@@ -589,7 +602,9 @@ function viewPreview() {
   if (q) list = list.filter(p => p.name.toLowerCase().includes(q) || CTY[p.cty].name.toLowerCase().includes(q) || p.cty.toLowerCase() === q);
   if (pv.role !== 'all') list = list.filter(p => p.role === pv.role);
   if (pv.fav) list = list.filter(p => favs.has(p.name));
-  list.sort((a, b) => { const x = key(a), y = key(b); return x < y ? -1 : x > y ? 1 : b.ovr - a.ovr; });
+  list.sort((a, b) => grpRank(a) - grpRank(b) || (() => { const x = key(a), y = key(b); return x < y ? -1 : x > y ? 1 : b.ovr - a.ovr; })());
+  const gm = GROUPS[S.settings.group];
+  const grpHead = (p, prev) => !gm || (prev && gm.key(prev) === gm.key(p)) ? '' : `<div class="pvgrp">${esc(gm.label(gm.key(p)))} <small>${list.filter(x => gm.key(x) === gm.key(p)).length}</small></div>`;
   const chip = (k, v, label, on) => `<button class="chip ${on ? 'on' : ''}" data-act="pvf" data-k="${k}" data-v="${v}">${label}</button>`;
   const live = S.members.filter(m => m.connected), rd = live.filter(m => m.ready).length;
   return `${topbar()}
@@ -606,7 +621,7 @@ function viewPreview() {
     </div>
     <div class="pvtable">
       <div class="pvrow hd"><span>Player</span><span>OVR</span><span>Bat</span><span>Bowl</span><span>Base</span><span></span></div>
-      ${list.map(p => `<div class="pvrow ${favs.has(p.name) ? 'fav' : ''}">
+      ${list.map((p, i) => grpHead(p, list[i - 1]) + `<div class="pvrow ${favs.has(p.name) ? 'fav' : ''}">
         <span class="pn"><b>${esc(p.name)}</b><span class="tags">${ctyTag(p)}${roleTag(p)}<span class="tag era">${p.era === 'L' ? 'Legend' : 'Active'}</span></span></span>
         <span class="n o">${p.ovr}</span><span class="n"><i class="meter bat"><i style="width:${p.bat}%"></i></i>${p.bat}</span><span class="n"><i class="meter bowl"><i style="width:${p.bowl}%"></i></i>${p.bowl}</span>
         <span class="n b">${fmtMoney(p.base)}</span>
@@ -641,7 +656,7 @@ function viewAuction() {
   return `${topbar()}
   <main class="auction">
     <section class="stage">
-      <div class="lotmeta">Lot <b>${a.idx + 1}</b> / ${a.order.length} · ${FORMATS[S.settings.format || 'all'].label} · Squad size ${S.settings.size}</div>
+      <div class="lotmeta">Lot <b>${a.idx + 1}</b> / ${a.order.length}${setTag(p)} · ${FORMATS[S.settings.format || 'all'].label} · Squad size ${S.settings.size}</div>
       <div class="pcard">
         <div class="ovr" style="--v:${p.ovr}"><span>${p.ovr}</span><small>OVR</small></div>
         <div class="pinfo">
@@ -715,7 +730,7 @@ function viewTV() {
   }
   if (S.phase === 'auction') {
     const a = S.auction, lot = a.lot, p = PLAYERS[lot.pid], leader = lot.bidder ? memberById(lot.bidder) : null;
-    return `<div class="tvwrap">${head(`Lot ${a.idx + 1} / ${a.order.length} · ${FORMATS[S.settings.format || 'all'].label}`)}
+    return `<div class="tvwrap">${head(`Lot ${a.idx + 1} / ${a.order.length}${setTag(p)} · ${FORMATS[S.settings.format || 'all'].label}`)}
       <div class="tvmain">
         <section class="tvstage">
           <div class="tvplayer">
