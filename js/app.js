@@ -64,6 +64,9 @@ function commit() {
 }
 
 const nextAmt = lot => lot.bid ? lot.bid + bidIncrement(lot.bid) : PLAYERS[lot.pid].base;
+// A bid may jump n increments above the next bid (the "+" button).
+const ladderAmt = (lot, n) => { let a = nextAmt(lot); for (let i = 0; i < n; i++) a += bidIncrement(a); return a; };
+const onLadder = (lot, amt) => { for (let i = 0; i <= 30; i++) if (ladderAmt(lot, i) === amt) return true; return false; };
 const bidCap = () => (S.settings.cap ? Math.round(S.settings.purse * S.settings.cap / 100) : Infinity);
 const maxBid = m => Math.min(bidCap(), m.purse - Math.max(0, S.settings.size - m.squad.length - 1) * MIN_BASE);
 const canBid = (m, amt) => m.squad.length < S.settings.size && amt <= maxBid(m);
@@ -167,7 +170,7 @@ function doBid(id, amt) {
   if (!S || S.phase !== 'auction') return;
   const lot = S.auction.lot, m = memberById(id);
   if (!lot || !m || lot.state !== 'bidding' || lot.paused) return;
-  if (lot.bidder === id || lot.passes.includes(id) || amt !== nextAmt(lot) || !canBid(m, amt)) return;
+  if (lot.bidder === id || lot.passes.includes(id) || !onLadder(lot, amt) || !canBid(m, amt)) return;
   lot.bid = amt; lot.bidder = id;
   lot.endsAt = Date.now() + S.settings.timer * 1000;
   checkQuick(); commit();
@@ -407,9 +410,15 @@ function act(a, el) {
     /* auction */
     case 'bid': {
       const lot = S.auction.lot; if (!lot) return;
-      const amt = nextAmt(lot);
+      const amt = ladderAmt(lot, ui.extra || 0);
       if (isHost) doBid(cid, amt); else send({ t: 'bid', amt });
       break;
+    }
+    case 'raise': {
+      const lot = S.auction.lot, mm = me(); if (!lot || lot.state !== 'bidding') return;
+      const n = clamp((ui.extra || 0) + +d.d, 0, 30);
+      if (+d.d > 0 && mm && !canBid(mm, ladderAmt(lot, n))) return toast('Bid cap or purse limit reached');
+      ui.extra = n; render(); break;
     }
     case 'pass': if (isHost) doPass(cid); else send({ t: 'pass' }); break;
     case 'pause': {
@@ -647,10 +656,15 @@ function viewPreview() {
   </main>`;
 }
 
+const can_ = (m, lot) => lot.state === 'bidding' && !lot.paused && lot.bidder !== m.id && !lot.passes.includes(m.id) && m.squad.length < S.settings.size;
 function viewAuction() {
   const a = S.auction, lot = a.lot, p = PLAYERS[lot.pid], m = me();
   const leader = lot.bidder ? memberById(lot.bidder) : null;
-  const amt = nextAmt(lot);
+  const rk = lot.pid + ':' + lot.bid;
+  if (ui.rk !== rk) { ui.rk = rk; ui.extra = 0; }
+  if (m) while (ui.extra > 0 && !canBid(m, ladderAmt(lot, ui.extra))) ui.extra--;
+  const amt = ladderAmt(lot, ui.extra || 0);
+  const canRaise = !!m && can_(m, lot) && canBid(m, ladderAmt(lot, (ui.extra || 0) + 1));
   let btnLabel = `Bid ${fmtMoney(amt)}`, can = true, why = '';
   if (!m) { can = false; why = 'Spectating'; }
   else if (lot.state !== 'bidding') { can = false; }
@@ -683,7 +697,9 @@ function viewAuction() {
               <div class="leader">${leader ? `${avatar(leader, 'sm')} <span style="color:${COLORS[leader.color % COLORS.length]}">${esc(leader.name)}</span>` : '<span class="muted">No bids yet</span>'}</div></div>
             <div class="timer"><div id="tfill"></div><span id="ttext"></span></div>
             <div class="btns">
+              <button class="btn raise" data-act="raise" data-d="-1" title="Lower bid" aria-label="Lower bid" ${can && ui.extra > 0 ? '' : 'disabled'}>−</button>
               <button class="btn primary big" data-act="bid" ${can ? '' : 'disabled'}>${can ? btnLabel : (why || btnLabel)}</button>
+              <button class="btn raise" data-act="raise" data-d="1" title="Raise bid" aria-label="Raise bid" ${can && canRaise ? '' : 'disabled'}>+</button>
               <button class="btn" data-act="pass" ${m && !lot.paused && lot.bidder !== cid && !lot.passes.includes(cid) && m.squad.length < S.settings.size ? '' : 'disabled'}>Pass</button>
             </div>`}
       </div>
