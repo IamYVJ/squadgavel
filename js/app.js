@@ -13,6 +13,11 @@ const store = {
 };
 let cid = store.get('sqgv-cid');
 if (!cid) { cid = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); store.set('sqgv-cid', cid); }
+// Secret that proves a client owns its cid. The cid itself is public (it's in the broadcast state),
+// so the host only accepts a join/rejoin for a cid together with the token it first registered.
+let tok = store.get('sqgv-tok');
+if (!tok) { tok = Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12) + Date.now().toString(36); store.set('sqgv-tok', tok); }
+const toks = {};            // host only, never broadcast: cid -> token
 
 let S = null;               // shared game state (host-authoritative)
 let isHost = false;
@@ -57,7 +62,7 @@ function commit() {
     const a = S.auction;
     if (a && a.lot && !a.lot.paused && a.lot.state === 'bidding') a.lot.left = Math.max(0, a.lot.endsAt - Date.now());
     S._t = Date.now();
-    store.set('sqgv-host', { S });
+    store.set('sqgv-host', { S, toks });
     conns.forEach(c => { if (c.open) { try { c.send({ t: 'state', s: S }); } catch {} } });
   }
   render();
@@ -191,6 +196,8 @@ function onHostData(conn, d) {
   if (d.t === 'join') {
     // cid ends up unescaped in data-id attributes on every client, so only accept plain ids
     if (typeof d.cid !== 'string' || !/^[a-z0-9]{4,40}$/.test(d.cid)) { conn.send({ t: 'err', msg: 'Invalid player id. Clear site data and retry.' }); setTimeout(() => conn.close(), 300); return; }
+    if (typeof d.tok !== 'string' || !/^[a-z0-9]{8,64}$/.test(d.tok)) { conn.send({ t: 'err', msg: 'Invalid player token. Reload the page and retry.' }); setTimeout(() => conn.close(), 300); return; }
+    if (toks[d.cid] && toks[d.cid] !== d.tok) { conn.send({ t: 'err', msg: 'That player is already in this room on another device.' }); setTimeout(() => conn.close(), 300); return; }
     let m = memberById(d.cid);
     if (!m) {
       if (S.phase !== 'lobby') { conn.send({ t: 'err', msg: 'This auction has already started.' }); setTimeout(() => conn.close(), 300); return; }
@@ -202,6 +209,7 @@ function onHostData(conn, d) {
       m = { id: d.cid, name: n, connected: true, host: false, color: color < 0 ? S.members.length % COLORS.length : color, purse: 0, squad: [] };
       S.members.push(m);
     } else m.connected = true;
+    toks[d.cid] = d.tok;
     const old = conns.get(d.cid);
     if (old && old !== conn) { old.__replaced = true; try { old.close(); } catch {} }
     conns.set(d.cid, conn); conn.cid = d.cid;
@@ -229,6 +237,8 @@ function openHostPeer(code, restored, attempt = 0) {
   peer.on('open', () => {
     isHost = true;
     S = restored || newState(code);
+    if (!restored) Object.keys(toks).forEach(k => delete toks[k]);
+    toks[cid] = tok;
     store.set('sqgv-session', { code, host: true });
     ui.busy = false; ui.error = '';
     startTick(); commit();
@@ -278,7 +288,7 @@ function joinRoom(code, name, tv = false) {
     hostConn = conn;
     conn.on('open', () => {
       if (tv) conn.send({ t: 'watch' });
-      else { conn.send({ t: 'join', cid, name }); store.set('sqgv-session', { code, host: false, name }); }
+      else { conn.send({ t: 'join', cid, tok, name }); store.set('sqgv-session', { code, host: false, name }); }
     });
     conn.on('data', d => {
       if (g !== gen) return;
@@ -378,7 +388,7 @@ function act(a, el) {
     case 'rejoin': { const s = store.get('sqgv-session'); if (s) joinRoom(s.code, s.name || ui.name); break; }
     case 'resume': {
       const h = store.get('sqgv-host'); if (!h) return;
-      const saved = h.S;
+      const saved = h.S; Object.assign(toks, h.toks || {});
       saved.members.forEach(m => { m.connected = m.id === cid; });
       const lot = saved.auction && saved.auction.lot;
       if (lot && lot.state === 'bidding') lot.paused = true;
@@ -863,7 +873,7 @@ function viewResults() {
 
 /* ---- boot ---- */
 ui.name = store.get('sqgv-name') || '';
-window.addEventListener('beforeunload', () => { if (isHost && S) store.set('sqgv-host', { S }); });
+window.addEventListener('beforeunload', () => { if (isHost && S) store.set('sqgv-host', { S, toks }); });
 render();
 // Visitor count from the shared GoatCounter site (per-path, all-time). Decorative: silent on failure.
 fetch('https://yvj.goatcounter.com/counter/' + encodeURIComponent(location.pathname) + '.json?start=2026-01-01')
