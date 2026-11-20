@@ -249,7 +249,7 @@ function openHostPeer(code, restored, attempt = 0) {
 function newState(code) {
   return {
     code, phase: 'lobby', _t: Date.now(),
-    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25, preview: false, group: 'none', shuffle: false },
+    settings: { pools: ['all'], purse: 10000, size: 13, timer: 12, lots: 'standard', format: 'all', cap: 25, preview: false, group: 'none', shuffle: false, live: false },
     members: [{ id: cid, name: ui.name, connected: true, host: true, color: 0, purse: 0, squad: [] }],
     auction: null
   };
@@ -386,6 +386,7 @@ function act(a, el) {
     case 'lots': S.settings.lots = d.v; commit(); break;
     case 'cap': S.settings.cap = +d.v; commit(); break;
     case 'format': S.settings.format = d.v; commit(); break;
+    case 'live': S.settings.live = d.v === '1'; commit(); break;
     case 'shuffle': S.settings.shuffle = d.v === '1'; commit(); break;
     case 'group': S.settings.group = d.v; commit(); break;
     case 'preview': S.settings.preview = d.v === '1'; commit(); break;
@@ -591,6 +592,8 @@ function viewLobby() {
           <div class="muted fdesc">${{ none: 'Players come up in mixed order, best tiers first', role: 'Batters, then keepers, all-rounders, bowlers', cty: 'One country at a time', era: 'Legends first, then current stars' }[st.group || 'none']}</div></div>
         <div><div class="lbl">Lot order</div><div class="chips">${chips([[0, 'Best first'], [1, 'Shuffled']], st.shuffle ? 1 : 0, 'shuffle')}</div>
           <div class="muted fdesc">${st.shuffle ? 'Fully random order' : 'Top-rated tiers first, mixed within each tier'}${st.group && st.group !== 'none' ? ' · applied within each set' : ''}</div></div>
+        <div><div class="lbl">Live team score</div><div class="chips">${chips([[0, 'Hidden'], [1, 'Show']], st.live ? 1 : 0, 'live')}</div>
+          <div class="muted fdesc">${st.live ? 'Each player sees their own squad rating as they build it (private)' : 'Ratings are revealed only at the end'}</div></div>
         <div><div class="lbl">Auction length</div><div class="chips">${chips([['quick', 'Quick'], ['standard', 'Standard'], ['full', 'Full pool']], st.lots, 'lots')}</div></div>
       </div>
       ${isHost
@@ -700,6 +703,9 @@ function viewAuction() {
           <div class="slots">${Array.from({ length: S.settings.size }, (_, i) => `<i class="${i < t.squad.length ? 'f' : ''}"></i>`).join('')}</div></div>
           <div class="pr"><b>${fmtMoney(t.purse)}</b><small>${t.squad.length}/${S.settings.size}${t.connected ? '' : ' · offline'}</small></div></div>`).join('')}
       </div>
+      ${S.settings.live && m ? (() => { const ev = evaluateSquad(m.squad.map(x => x.pid)); return `<div class="card livescore"><div class="lbl">Your team score <small>· only you see this</small></div>
+        <div class="ls"><b>${ev.rating.toFixed(1)}</b><span>Bat ${ev.bat.toFixed(0)} · Bowl ${ev.bowl.toFixed(0)}</span></div>
+        <div class="muted">${m.squad.length < 11 ? `Best XI so far (${m.squad.length}/11 players)` : 'Based on your best XI'}</div></div>`; })() : ''}
       ${side ? `<div class="card squad"><h3>${side.id === cid ? 'Your squad' : esc(side.name) + "'s squad"}${side.id === cid ? `<small>Max bid ${fmtMoney(Math.max(0, maxBid(side)))}</small>` : ''}</h3>
         ${side.squad.length ? side.squad.map(s => { const sp = PLAYERS[s.pid]; return `<div class="srow">${ctyTag(sp)}<span class="sn">${esc(sp.name)}</span><span class="pill r-${sp.role}">${sp.role}</span><b>${fmtMoney(s.price)}</b></div>`; }).join('') : '<div class="muted">No players yet</div>'}
       </div>` : ''}

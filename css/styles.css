@@ -278,3 +278,4 @@ footer .visitors{display:inline-block;margin-top:8px}footer .visitors b{color:va
 }
 .pvrow .n .meter{display:block}
 .pvgrp{font:300 22px var(--head);color:var(--gold2);padding:26px 0 8px;border-bottom:1px solid var(--line2)}.pvgrp small{font:400 11px var(--font);letter-spacing:.14em;color:var(--muted);margin-left:8px}
+.livescore{padding-bottom:14px}.livescore .ls{display:flex;align-items:baseline;gap:14px}.livescore .ls b{font:200 44px/1 var(--head);color:var(--gold2)}.livescore .ls span{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft)}.livescore .muted{font-size:12px;margin-top:4px}
